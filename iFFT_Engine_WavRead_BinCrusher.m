@@ -1,17 +1,13 @@
 %hold off;
-clear; 
+clear;
 
-% Read in audio file
-filename = 'trumpet.wav';
-[inputWav,Fs] = audioread(filename);
-%sound(inputWav,Fs);
+%% Set Bincrusher parameters
+% Bins to crush, Center +/- Width
+binCrush = 6;       % Center bin
+crushWidth = 4;     % Crush width (must be less than binCrush - 2)
+negFreqOffset = 0;     % Center bin offset on negative frequency side
 
-% Total length of input waveform
-numSamples = length(inputWav);
-
-% Array of frequency bins for FFT plot
-freqBins = Fs*(1:(numSamples/2+1))/numSamples;
-
+%% Setup FFT parameters
 % Size of frame
 frameSize = 512;
 
@@ -21,85 +17,37 @@ window = hann(frameSize).';
 % Frame overlap amount
 overlap = 0.5;
 
-% Create waveform slices
-numSlices = ceil(numSamples / (frameSize * overlap));
-
 % Step size
 stepSize = frameSize * overlap;
 
-% Make array of input slices
-for i = 1:(numSlices - 1)
-    inputOffset = stepSize * (i - 1);
-    x( i, 1:frameSize) = window(1:frameSize) .* inputWav((inputOffset + 1):(inputOffset + frameSize));
-end
+%% Read in wav file
+fileName = 'trumpet.wav';
+playInputSound = false;
 
-% Zero pad last slice
-numZeros = frameSize - mod(numSamples, stepSize);
-zeroPad = zeros(1, numZeros);
-inputOffset = stepSize * (numSlices - 1);
-lastSlice(1:(frameSize - numZeros)) = inputWav((inputOffset + 1):numSamples);
-lastSlice((frameSize - numZeros + 1):frameSize) = zeroPad;
-x( numSlices, 1:frameSize) = window(1:frameSize) .* inputWav((inputOffset + 1):(inputOffset + frameSize));
+[inputSig, Fs, numSamples, numSlices] = ...
+    ReadWavPad(fileName, stepSize, playInputSound);
 
-% Compute array of FFTs
+% Array of frequency bins for FFT plot
+freqBins = Fs/frameSize * (1:(frameSize/2+1));
+
+% Create FFTSliceArray
+FFTSliceArray = BuildFFTSliceArray(inputSig, window, stepSize);
+
+%% Manipulate data
+
+% BinCrusher
 for i = 1:numSlices
-    X( i, 1:frameSize) = fft(x(i, 1:frameSize));
-end
-
-% Manipulate data
-% Bins to chrush
-binCrush = 50;
-crushWidth = 40;
-negfOffset = -1;
-
-if(1)
-    for i = 1:numSlices
-        for j = 0:crushWidth
-            X(i, binCrush + j) = 0;
-            X(i, binCrush - j) = 0;
-            X(i, (length(X) - binCrush + negfOffset - j)) = 0;
-            X(i, (length(X) - binCrush + negfOffset + j)) = 0;
-        end
-    end 
-end
-
-% Take iFFT
-for i = 1:(numSlices - 1)
-    xx( i, 1:frameSize) = ifft(X(i, 1:frameSize));
-end
-
-if (1)
-    for i = 1:(numSlices - 1)
-        for j = 1:frameSize
-            y(i, j) = real(xx(i, j));
-        end
+    for j = 0:crushWidth
+        FFTSliceArray(i, binCrush + j) = 0;
+        FFTSliceArray(i, binCrush - j) = 0;
+        negCrushBin = length(FFTSliceArray) - binCrush + 2 + negFreqOffset;
+        FFTSliceArray(i, (negCrushBin - j)) = 0;
+        FFTSliceArray(i, (negCrushBin + j)) = 0;
     end
-else
-    y = xx;
-end
+end 
 
+% iFFT overlap add
+makeOutputReal = true;
+outputSig = iFFTOverlapAdd(FFTSliceArray, makeOutputReal);
 
-% First stepSize doesn't have an add
-z(1:stepSize) = y(1, 1:stepSize);
-
-% Overlap add
-for i = 2:(numSlices - 1)
-    outputIndex = stepSize * (i - 1);
-    z((outputIndex + 1):(outputIndex + stepSize)) = ...
-        y((i - 1), (stepSize + 1):(stepSize + stepSize)) ...
-        + y(i, 1:stepSize);
-end
-
-% Last StepSize doesn't have an add
-outputIndex = stepSize * numSlices;
-z( (outputIndex + 1):(outputIndex + stepSize)) = ...
-    y((numSlices - 1), (stepSize + 1):(stepSize + stepSize));
-
-%plot(z);
-
-%Z = fft(z);
-%zMag = abs(Z/numSamples);
-%zMagOneSided = zMag(1:numSamples/2+1);
-%plot(freqBins, zMagOneSided);
-
-sound(z,Fs);
+sound(outputSig,Fs);
