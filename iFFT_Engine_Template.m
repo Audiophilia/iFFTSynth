@@ -33,7 +33,7 @@ FFTSliceArray = BuildFFTSliceArray(inputSig, window, stepSize);
 
 
 %% Take iFFT and overlap add
-
-outputSig = iFFTOverlapAdd(FFTSliceArray);
+makeOutputReal = true;
+outputSig = iFFTOverlapAdd(FFTSliceArray, makeOutputReal);
 
 sound(outputSig,Fs);
